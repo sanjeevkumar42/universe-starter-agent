@@ -106,7 +106,7 @@ class TorcsEnv(gym.Env):
         if track.min() < 0 or np.cos(angle) < 0 or self.time_step > self.min_steps and long_speed < 5:
             reward = -1
             done = True
-            logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed, self.time_steps)
+            logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed, self.time_step)
         else:
             reward = long_speed
             done = False
@@ -117,14 +117,15 @@ class TorcsEnv(gym.Env):
         return self.image, reward, done, info
 
     def _reset(self):
-        logger.info('Resetting torcs')
+        logger.info('Resetting torcs!!')
         if self.client:
             self.client.R.d['meta'] = True
             self.client.respond_to_server()
-        self.time_step = 0
         self.client = snakeoil.Client(p=self.port)
         self.client.get_servers_input()
         self.image = get_screen(0, 0, self.screen_w, self.screen_h, self.disp_name)
+        logger.info('Successfully reset torcs after timesteps:{}', self.time_step)
+        self.time_step = 0
         return self.image
 
     def _render(self, mode='human', close=False):

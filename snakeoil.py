@@ -219,6 +219,8 @@ class Client():
         if not self.so: return
         sockdata= str()
 
+        failed_attempts = 0
+
         while True:
             try:
                 # Receive server data
@@ -244,7 +246,10 @@ class Client():
                 self.shutdown()
                 return
             elif not sockdata: # Empty?
-                continue       # Try again.
+                failed_attempts += 1
+                if failed_attempts == 5:
+                    print('Torcs server not responding')
+                    raise Exception('Torcs not responding')
             else:
                 self.S.parse_server_str(sockdata)
                 if self.debug:

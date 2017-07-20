@@ -45,6 +45,7 @@ class TorcsEnv(gym.Env):
         self.viewer = None
         self.time_step = 0
         self.client = None
+        self.torcs_process = None
         self.frameskip = frame_skip
         self.action_space = spaces.Discrete(len(self.ACTIONS))
         self.observation_space = spaces.Box(low=0, high=255, shape=(self.screen_h, self.screen_w, 3))
@@ -56,6 +57,9 @@ class TorcsEnv(gym.Env):
         screen_res = '{}x{}x{}'.format(self.screen_w, self.screen_h, color_depth)
         self.disp_process = subprocess.Popen(['Xvfb', self.disp_name, '-ac', '-screen', '0', screen_res])
 
+        logger.info('Xvfb pid:{}, display:{}', self.disp_process.pid, self.disp_name)
+
+    def __start_torcs(self):
         torcs_bin = os.path.join(self.torcs_dir, 'lib/torcs/torcs-bin')
         torcs_lib = os.path.join(self.torcs_dir, 'lib/torcs/lib')
         torcs_data = os.path.join(self.torcs_dir, 'share/games/torcs/')
@@ -63,11 +67,9 @@ class TorcsEnv(gym.Env):
                                    env={'LD_LIBRARY_PATH': torcs_lib, 'DISPLAY': self.disp_name},
                                    cwd=torcs_data)
         for cmd in self.LAUNCH_SEQ:
-            time.sleep(0.2)
+            time.sleep(0.5)
             subprocess.call(['xdotool', 'key', cmd], env={'DISPLAY': self.disp_name})
-        # embed()
-        logger.info('Xvfb pid:{}, display:{}, torcs pid:{}, port:{}', self.disp_process.pid, self.disp_name,
-                    self.torcs_process.pid, self.port)
+        logger.info('Started torcs pid:{}, port:{}', self.torcs_process.pid, self.port)
 
     def __to_torcs_action(self, action):
         torcs_actions = {a[0]: 0.0 for a in self.ACTIONS}
@@ -81,7 +83,7 @@ class TorcsEnv(gym.Env):
         self.client.R.d['gear'] = 1
         if self.client.S.d['speedX'] > 50:
             self.client.R.d['gear'] = 2
-        
+
         if self.client.S.d['speedX'] > 80:
             self.client.R.d['gear'] = 3
 
@@ -106,7 +108,8 @@ class TorcsEnv(gym.Env):
         if track.min() < 0 or np.cos(angle) < 0 or self.time_step > self.min_steps and long_speed < 5:
             reward = -1
             done = True
-            logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed, self.time_step)
+            logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed,
+                         self.time_step)
         else:
             reward = long_speed
             done = False
@@ -118,9 +121,9 @@ class TorcsEnv(gym.Env):
 
     def _reset(self):
         logger.info('Resetting torcs!!')
-        if self.client:
-            self.client.R.d['meta'] = True
-            self.client.respond_to_server()
+        if self.torcs_process:
+            self.torcs_process.kill()
+        self.__start_torcs()
         self.client = snakeoil.Client(p=self.port)
         self.client.get_servers_input()
         self.image = get_screen(0, 0, self.screen_w, self.screen_h, self.disp_name)
@@ -151,7 +154,7 @@ if __name__ == '__main__':
     print(a.action_space.n)
     for i in range(10000):
         ob, reward, done, info = a.step(a.action_space.sample())
-        if done:
+        if i % 50 == 0:
             print('Resetting! Done.')
             a.reset()
             # a.render()

@@ -21,12 +21,12 @@ from logger import logger
 
 class TorcsEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array']}
-    min_steps = 500
+    min_steps = 1000
     min_speed = 5  # speed should not be less than 5km/h after min_steps
 
     ACTIONS = [('steer', -1), ('steer', 0), ('steer', 1), ('accel', 0), ('accel', 0.5), ('accel', 1), ('brake', 0),
                ('brake', 0.5), ('brake', 1)]
-    spec = EnvSpec('Torcs-v0', max_episode_steps=1000, reward_threshold=1000.0)
+    spec = EnvSpec('Torcs-v0', max_episode_steps=10000, reward_threshold=20000.0)
 
     class KEY_MAP:
         ENTER = 'KP_Enter'
@@ -36,9 +36,9 @@ class TorcsEnv(gym.Env):
 
     def __init__(self, env_id, width=640, height=480, frame_skip=(2, 5), torcs_dir='/usr/local'):
         self.env_id = env_id
-        self.port = 3000 + self.env_id
+        self.port = 9200 + self.env_id
         print('Port', self.port)
-        self.disp_name = ':{}'.format(self.env_id)
+        self.disp_name = ':{}'.format(20 + self.env_id)
         self.screen_w, self.screen_h = width, height
         self.torcs_dir = torcs_dir
         self.__game_init()
@@ -79,6 +79,11 @@ class TorcsEnv(gym.Env):
 
         self.client.R.d.update(torcs_action)
         self.client.R.d['gear'] = 1
+        if self.client.S.d['speedX'] > 50:
+            self.client.R.d['gear'] = 2
+        
+        if self.client.S.d['speedX'] > 80:
+            self.client.R.d['gear'] = 3
 
         reward = 0.0
         if isinstance(self.frameskip, int):
@@ -98,9 +103,10 @@ class TorcsEnv(gym.Env):
 
         track = np.array(self.client.S.d['track'])
 
-        if track.min() < 0 or np.cos(angle) < 0:
+        if track.min() < 0 or np.cos(angle) < 0 or self.time_step > self.min_steps and long_speed < 5:
             reward = -1
             done = True
+            logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed, self.time_steps)
         else:
             reward = long_speed
             done = False

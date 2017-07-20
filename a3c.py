@@ -24,7 +24,7 @@ given a rollout, compute its returns and the advantage
     rewards_plus_v = np.asarray(rollout.rewards + [rollout.r])
     batch_r = discount(rewards_plus_v, gamma)[:-1]
     delta_t = rewards + gamma * vpred_t[1:] - vpred_t[:-1]
-    # this formula for the advantage comes "Generalized Advantage Estimation":
+    # this formula for the advantage comes ";":
     # https://arxiv.org/abs/1506.02438
     batch_adv = discount(delta_t, gamma * lambda_)
 

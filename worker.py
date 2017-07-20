@@ -38,6 +38,7 @@ def run(args, server):
     saver = FastSaver(variables_to_save)
 
     var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
+
     logger.info('Trainable vars:')
     for v in var_list:
         logger.info('  %s %s', v.name, v.get_shape())

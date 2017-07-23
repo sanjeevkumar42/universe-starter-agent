@@ -1,4 +1,7 @@
 import os
+from sysv_ipc import SharedMemory
+
+import cv2
 from gym.envs.registration import registry, register, make, spec, EnvSpec
 from subprocess import Popen
 
@@ -15,6 +18,7 @@ from gym.utils import seeding
 from IPython import embed
 
 import snakeoil
+import xserver_util
 from xserver_util import get_screen
 from logger import logger
 
@@ -46,6 +50,7 @@ class TorcsEnv(gym.Env):
         self.time_step = 0
         self.client = None
         self.torcs_process = None
+        self.shared_memory = None
         self.frameskip = frame_skip
         self.action_space = spaces.Discrete(len(self.ACTIONS))
         self.observation_space = spaces.Box(low=0, high=255, shape=(self.screen_h, self.screen_w, 3))
@@ -60,6 +65,8 @@ class TorcsEnv(gym.Env):
         logger.info('Xvfb pid:{}, display:{}', self.disp_process.pid, self.disp_name)
 
     def __start_torcs(self):
+        if self.torcs_process:
+            self.torcs_process.kill()
         torcs_bin = os.path.join(self.torcs_dir, 'lib/torcs/torcs-bin')
         torcs_lib = os.path.join(self.torcs_dir, 'lib/torcs/lib')
         torcs_data = os.path.join(self.torcs_dir, 'share/games/torcs/')
@@ -69,6 +76,7 @@ class TorcsEnv(gym.Env):
         for cmd in self.LAUNCH_SEQ:
             time.sleep(0.5)
             subprocess.call(['xdotool', 'key', cmd], env={'DISPLAY': self.disp_name})
+        self.shared_memory = SharedMemory(self.port)
         logger.info('Started torcs pid:{}, port:{}', self.torcs_process.pid, self.port)
 
     def __to_torcs_action(self, action):
@@ -114,17 +122,22 @@ class TorcsEnv(gym.Env):
             reward = long_speed
             done = False
 
-        self.image = get_screen(0, 0, self.screen_w, self.screen_h, self.disp_name)
+        self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
         info = {}
         self.time_step += 1
         return self.image, reward, done, info
 
     def _reset(self):
         logger.info('Resetting torcs!!')
-        if self.torcs_process:
-            self.torcs_process.kill()
-        self.__start_torcs()
-        self.client = snakeoil.Client(p=self.port)
+        while True:
+            try:
+                self.__start_torcs()
+                self.client = snakeoil.Client(p=self.port)
+                break
+            except Exception as e:
+                logger.info("Failed to connect to torcs. Will try again.")
+                continue
+
         self.client.get_servers_input()
         self.image = get_screen(0, 0, self.screen_w, self.screen_h, self.disp_name)
         logger.info('Successfully reset torcs after timesteps:{}', self.time_step)
@@ -149,13 +162,14 @@ class TorcsEnv(gym.Env):
 
 
 if __name__ == '__main__':
-    a = TorcsEnv(1)
+    a = TorcsEnv(3, frame_skip=1)
     a.reset()
     print(a.action_space.n)
     for i in range(10000):
-        ob, reward, done, info = a.step(a.action_space.sample())
-        if i % 50 == 0:
-            print('Resetting! Done.')
-            a.reset()
-            # a.render()
-            # a.close()
+        ob, reward, done, info = a.step(5)
+        # if i % 50 == 0:
+        #     print('Resetting! Done.')
+        #     a.reset()
+        # a.render()
+        # cv2.imwrite('/home/sanjeev/debug/{}.png'.format(i), a.render('rgb_array'))
+        # a.close()

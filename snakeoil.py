@@ -148,8 +148,9 @@ class Client():
             print('Error: Could not create socket...')
             sys.exit(-1)
         # == Initialize Connection To Server ==
-        self.so.settimeout(1)
-
+        self.so.settimeout(2)
+        max_attepts = 5
+        attempt = 0
         while True:
             # This string establishes track sensor angles! You can customize them.
             a= "-90 -75 -60 -45 -30 -20 -15 -10 -5 0 5 10 15 20 30 45 60 75 90"
@@ -168,6 +169,10 @@ class Client():
                 sockdata = sockdata.decode('utf-8')
             except socket.error as emsg:
                 print("Waiting for server on %d............" % self.port)
+                if attempt >= max_attepts:
+                    raise emsg
+                else:
+                    attempt += 1
 
             if '***identified***' in sockdata:
                 print("Client connected on %d.............." % self.port)
@@ -219,8 +224,8 @@ class Client():
         if not self.so: return
         sockdata= str()
 
-        failed_attempts = 0
-
+        max_attempts = 10
+        attempts = 0
         while True:
             try:
                 # Receive server data
@@ -246,10 +251,11 @@ class Client():
                 self.shutdown()
                 return
             elif not sockdata: # Empty?
-                failed_attempts += 1
-                if failed_attempts == 5:
-                    print('Torcs server not responding')
-                    raise Exception('Torcs not responding')
+                if attempts >= max_attempts:
+                    raise Exception("Torcs not responding")
+                else:
+                    attempts +=1
+                continue
             else:
                 self.S.parse_server_str(sockdata)
                 if self.debug:
@@ -393,6 +399,8 @@ def drive_example(c):
     if ((S['wheelSpinVel'][2]+S['wheelSpinVel'][3]) -
        (S['wheelSpinVel'][0]+S['wheelSpinVel'][1]) > 5):
        R['accel']-= .2
+    # R['accel'] = 1.0
+    # R['steer'] = 0.0
 
     # Automatic Transmission
     R['gear']=1
@@ -410,10 +418,11 @@ def drive_example(c):
 
 # ================ MAIN ================
 if __name__ == "__main__":
-    C= Client(p=2006)
+    C= Client(p=8901)
     for step in range(100000,0,-1):
         C.get_servers_input()
         print(C.S.d)
+        time.sleep(0.3)
         drive_example(C)
         C.respond_to_server()
     C.shutdown()

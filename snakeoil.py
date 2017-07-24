@@ -58,6 +58,8 @@ import sys
 import getopt
 import os
 import time
+
+
 PI= 3.14159265359
 
 data_size = 2**17
@@ -224,7 +226,7 @@ class Client():
         if not self.so: return
         sockdata= str()
 
-        max_attempts = 10
+        max_attempts = 20
         attempts = 0
         while True:
             try:
@@ -418,7 +420,7 @@ def drive_example(c):
 
 # ================ MAIN ================
 if __name__ == "__main__":
-    C= Client(p=8901)
+    C= Client(p=9225)
     for step in range(100000,0,-1):
         C.get_servers_input()
         print(C.S.d)

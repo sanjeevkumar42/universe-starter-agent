@@ -1,17 +1,31 @@
 import datetime
 import threading
+import os
 
 
 class Logger:
+    def __init__(self, name, logdir='stdout'):
+        self.name = name
+        self.logdir = logdir
+        self.logfile = os.path.join(logdir, '{}.log'.format(name))
+
     def info(self, str):
-        print(str)
+        if self.logdir != 'stdout':
+            with open(self.logfile, 'a') as fw:
+                fw.write(str + '\n')
+        else:
+            print(str)
 
     def log(self, tags, message, *args):
         tag = ":".join(tags)
-        header = "{}[{}:{}]:".format(datetime.datetime.now(), threading.current_thread().name, tag)
+        header = "{}[{}:{}]:".format(datetime.datetime.now(), self.name, tag)
         message = str(message)
         message = message.format(*args)
-        print(header + message)
+        if self.logdir != 'stdout':
+            with open(self.logfile, 'a') as fw:
+                fw.write(header + message + '\n')
+        else:
+            print(header + message)
 
     def error(self, message="", *args):
         self.log(["ERROR"], message, *args)
@@ -26,4 +40,4 @@ class Logger:
         self.log(["DEBUG"], message, *args)
 
 
-logger = Logger()
+logger = Logger(threading.current_thread().name)

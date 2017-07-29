@@ -3,7 +3,7 @@ from sysv_ipc import SharedMemory
 from threading import Thread
 
 import cv2
-from gym.envs.registration import registry, register, make, spec, EnvSpec
+from gym.envs.registration import EnvSpec
 from subprocess import Popen
 
 import subprocess
@@ -14,14 +14,11 @@ import math
 import time
 import numpy as np
 from gym import spaces
-from gym.envs import registration
 from gym.utils import seeding
-from IPython import embed
 
 import snakeoil
 import xserver_util
 from logger import Logger
-from xserver_util import get_screen
 
 
 class ProcessLogPoller(Thread):
@@ -59,10 +56,10 @@ class TorcsEnv(gym.Env):
 
     LAUNCH_SEQ = [KEY_MAP.ENTER, KEY_MAP.ENTER, KEY_MAP.UP, KEY_MAP.UP, KEY_MAP.ENTER, KEY_MAP.ENTER]
 
-    def __init__(self, env_id, width=640, height=480, frame_skip=(2, 5), torcs_dir='/usr/local',
+    def __init__(self, env_id, width=84, height=84, frame_skip=(2, 5), torcs_dir='/usr/local',
                  logdir='/data/logs', **kwargs):
         self.env_id = env_id
-        self.port = 9200 + self.env_id
+        self.port = 9300 + self.env_id
         self.disp_name = ':{}'.format(20 + self.env_id)
         self.screen_w, self.screen_h = width, height
         self.torcs_dir = torcs_dir
@@ -100,9 +97,10 @@ class TorcsEnv(gym.Env):
         torcs_bin = os.path.join(self.torcs_dir, 'lib/torcs/torcs-bin')
         torcs_lib = os.path.join(self.torcs_dir, 'lib/torcs/lib')
         torcs_data = os.path.join(self.torcs_dir, 'share/games/torcs/')
-        self.torcs_process = Popen([torcs_bin, '-port', str(self.port), '-nofuel', '-nodamage', '-nolaptime'],
-                                   env={'LD_LIBRARY_PATH': torcs_lib, 'DISPLAY': self.disp_name},
-                                   cwd=torcs_data, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        self.torcs_process = Popen(
+            [torcs_bin, '-port', str(self.port), '-nofuel', '-nodamage', '-nolaptime', '-cmdFreq', '25'],
+            env={'LD_LIBRARY_PATH': torcs_lib, 'DISPLAY': self.disp_name},
+            cwd=torcs_data, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         self.torcs_logpoller.set_process(self.torcs_process)
         for cmd in self.LAUNCH_SEQ:
             time.sleep(0.8)
@@ -132,7 +130,8 @@ class TorcsEnv(gym.Env):
         else:
             num_steps = self.np_random.randint(self.frameskip[0], self.frameskip[1])
 
-        self.logger.info('Sending command to server:{}', self.client.S.d)
+        self.logger.info('Sending command to server:{}', self.client.R.d)
+        self.logger.info('Server state:{}', self.client.S.d)
         for i in range(num_steps):
             self.client.respond_to_server()
             self.client.get_servers_input()
@@ -153,7 +152,7 @@ class TorcsEnv(gym.Env):
             reward = long_speed
             done = False
 
-        self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
+        self.image = xserver_util.get_screen_shm(self.shared_memory)
         info = {}
         if self.time_step % 5 == 0 or done:
             filename = os.path.join(self.logdir, '{}_{}.png'.format(self.torcs_process.pid, self.time_step))
@@ -173,7 +172,7 @@ class TorcsEnv(gym.Env):
                 self.logger.info("Failed to connect to torcs. Will try again.")
                 continue
 
-        self.image = get_screen(0, 0, self.screen_w, self.screen_h, self.disp_name)
+        self.image = xserver_util.get_screen_shm(self.shared_memory)
         self.logger.info('Successfully reset torcs after timesteps:{}', self.time_step)
         self.time_step = 0
         return self.image
@@ -196,11 +195,8 @@ class TorcsEnv(gym.Env):
 
 
 if __name__ == '__main__':
-    a = TorcsEnv(25, frame_skip=1)
+    a = TorcsEnv(17, frame_skip=1)
     a.reset()
-    a.reset()
-    a.reset()
-    print(a.action_space.n)
     for i in range(100000):
         ob, reward, done, info = a.step(5)
         if done:
@@ -208,6 +204,7 @@ if __name__ == '__main__':
         # if i % 50 == 0:
         #     print('Resetting! Done.')
         #     a.reset()
+        print('step:{}'.format(i))
         a.render()
         # cv2.imwrite('/home/sanjeev/debug/{}.png'.format(i), a.render('rgb_array'))
         # a.close()

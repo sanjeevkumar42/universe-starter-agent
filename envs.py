@@ -41,18 +41,16 @@ def create_torcs_env(remote, **kwargs):
     return env
 
 def _process_frame_torcs(frame):
-    frame = frame[:400, 20:20 + 600]
-    frame = cv2.resize(frame, (240, 160))
     frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     frame = frame*(1.0/255.0)
-    frame = np.reshape(frame, [160, 240, 1])
+    frame = np.reshape(frame, [84, 84, 1])
     return frame
 
 
 class TorcsRescale(vectorized.ObservationWrapper):
     def __init__(self, env=None):
         super(TorcsRescale, self).__init__(env)
-        self.observation_space = Box(0.0, 1.0, [160, 240, 1])
+        self.observation_space = Box(0.0, 1.0, [84, 84, 1])
 
     def _observation(self, observation_n):
         return [_process_frame_torcs(observation) for observation in observation_n]

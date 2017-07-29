@@ -45,7 +45,7 @@ def categorical_sample(logits, d):
     return tf.one_hot(value, d)
 
 class LSTMPolicy(object):
-    def __init__(self, ob_space, ac_space):
+    def __init__(self, ob_space, ac_space, weights_path=None):
         self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))
 
         for i in range(4):
@@ -82,15 +82,28 @@ class LSTMPolicy(object):
         self.state_out = [lstm_c[:1, :], lstm_h[:1, :]]
         self.sample = categorical_sample(self.logits, ac_space)[0, :]
         self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
+        if weights_path:
+            self.sess = tf.Session()
+            all_variables = [v for v in tf.global_variables() if not v.name.startswith("local")]
+            saver = tf.train.Saver(all_variables)
+            saver.restore(self.sess, weights_path)
+        else:
+            self.sess = None
 
     def get_initial_features(self):
         return self.state_init
 
     def act(self, ob, c, h):
-        sess = tf.get_default_session()
+        if self.sess:
+            sess = self.sess
+        else:
+            sess = tf.get_default_session()
         return sess.run([self.sample, self.vf] + self.state_out,
                         {self.x: [ob], self.state_in[0]: c, self.state_in[1]: h})
 
     def value(self, ob, c, h):
-        sess = tf.get_default_session()
+        if self.sess:
+            sess = self.sess
+        else:
+            sess = tf.get_default_session()
         return sess.run(self.vf, {self.x: [ob], self.state_in[0]: c, self.state_in[1]: h})[0]

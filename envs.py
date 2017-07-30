@@ -35,25 +35,25 @@ def create_env(env_id, client_id, remotes, **kwargs):
 def create_torcs_env(remote, **kwargs):
     env = TorcsEnv(int(remote), **kwargs)
     env = Vectorize(env)
-    env = TorcsRescale(env)
+    env = TorcsRescale(env, **kwargs)
     env = DiagnosticsInfo(env)
     env = Unvectorize(env)
     return env
 
-def _process_frame_torcs(frame):
-    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    frame = frame*(1.0/255.0)
-    frame = np.reshape(frame, [84, 84, 1])
-    return frame
 
 
 class TorcsRescale(vectorized.ObservationWrapper):
-    def __init__(self, env=None):
+    def __init__(self, env=None, width=640, height=480, **kwargs):
         super(TorcsRescale, self).__init__(env)
-        self.observation_space = Box(0.0, 1.0, [84, 84, 1])
-
+        self.observation_space = Box(0.0, 1.0, [height, width, 1])
     def _observation(self, observation_n):
-        return [_process_frame_torcs(observation) for observation in observation_n]
+        return [self._process_frame_torcs(observation) for observation in observation_n]
+
+    def _process_frame_torcs(self, frame):
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = frame*(1.0/255.0)
+        frame = np.reshape(frame, self.observation_space.shape)
+        return frame
 
 
 def create_flash_env(env_id, client_id, remotes, **_):

@@ -1,8 +1,10 @@
 import os
+import random
 from sysv_ipc import SharedMemory
 from threading import Thread
 
 import cv2
+import sys
 from gym.envs.registration import EnvSpec
 from subprocess import Popen
 
@@ -59,7 +61,7 @@ class TorcsEnv(gym.Env):
     def __init__(self, env_id, width=84, height=84, frame_skip=(2, 5), torcs_dir='/usr/local',
                  logdir='/data/logs', **kwargs):
         self.env_id = env_id
-        self.port = 9300 + self.env_id
+        self.port = 9500 + self.env_id
         self.disp_name = ':{}'.format(20 + self.env_id)
         self.screen_w, self.screen_h = width, height
         self.torcs_dir = torcs_dir
@@ -75,6 +77,7 @@ class TorcsEnv(gym.Env):
         self._seed()
         self.logdir = os.path.join(logdir, 'torcs-{}'.format(env_id))
         self.logger = Logger(self.env_id, self.logdir)
+        self.dist_raced = 0.0
 
         if not os.path.exists(self.logdir):
             os.makedirs(self.logdir)
@@ -98,7 +101,8 @@ class TorcsEnv(gym.Env):
         torcs_lib = os.path.join(self.torcs_dir, 'lib/torcs/lib')
         torcs_data = os.path.join(self.torcs_dir, 'share/games/torcs/')
         self.torcs_process = Popen(
-            [torcs_bin, '-port', str(self.port), '-nofuel', '-nodamage', '-nolaptime', '-cmdFreq', '25'],
+            [torcs_bin, '-port', str(self.port), '-nofuel', '-nodamage', '-nolaptime', '-cmdFreq', '25', '-h',
+             str(self.screen_h), '-w', str(self.screen_w)],
             env={'LD_LIBRARY_PATH': torcs_lib, 'DISPLAY': self.disp_name},
             cwd=torcs_data, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         self.torcs_logpoller.set_process(self.torcs_process)
@@ -137,23 +141,25 @@ class TorcsEnv(gym.Env):
             self.client.get_servers_input()
             speed = self.client.S.d['speedX']
             angle = self.client.S.d['angle']
-            reward += speed * math.cos(angle)
+            dist_raced = self.client.S.d['distRaced']
+            reward += dist_raced - self.dist_raced + speed * math.cos(angle) / 100.0
+            self.dist_raced = dist_raced
 
         long_speed = speed * math.cos(angle)  # speed along x-axis
 
         track = np.array(self.client.S.d['track'])
 
         if track.min() < 0 or np.cos(angle) < 0 or self.time_step > self.min_steps and long_speed < 5:
-            reward = -500
+            reward = -25
             done = True
+            print(self.client.S.d)
             self.logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed,
                               self.time_step)
         else:
-            reward = long_speed
             done = False
 
-        self.image = xserver_util.get_screen_shm(self.shared_memory)
-        info = {}
+        self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
+        info = dict(self.client.S.d)
         if self.time_step % 5 == 0 or done:
             filename = os.path.join(self.logdir, '{}_{}.png'.format(self.torcs_process.pid, self.time_step))
             cv2.imwrite(filename, self.image)
@@ -171,8 +177,8 @@ class TorcsEnv(gym.Env):
             except Exception as e:
                 self.logger.info("Failed to connect to torcs. Will try again.")
                 continue
-
-        self.image = xserver_util.get_screen_shm(self.shared_memory)
+        self.dist_raced = 0.0
+        self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
         self.logger.info('Successfully reset torcs after timesteps:{}', self.time_step)
         self.time_step = 0
         return self.image
@@ -194,17 +200,88 @@ class TorcsEnv(gym.Env):
         return [seed]
 
 
+R = {'accel': 0.0, 'gear': 1, 'steer': 0}
+
+
+def drive_example(S):
+    '''This is only an example. It will get around the track but the
+    correct thing to do is write your own `drive()` function.'''
+    target_speed = 100
+
+    # Steer To Corner
+    R['steer'] = S['angle'] * 10 / math.pi
+    # Steer To Center
+    R['steer'] -= S['trackPos'] * .10
+
+    # Throttle Control
+    if S['speedX'] < target_speed - (R['steer'] * 50):
+        R['accel'] += .01
+    else:
+        R['accel'] -= .01
+    if S['speedX'] < 10:
+        R['accel'] += 1 / (S['speedX'] + .1)
+
+    # Traction Control System
+    if ((S['wheelSpinVel'][2] + S['wheelSpinVel'][3]) -
+            (S['wheelSpinVel'][0] + S['wheelSpinVel'][1]) > 5):
+        R['accel'] -= .2
+    # R['accel'] = 1.0
+    # R['steer'] = 0.0
+
+    # Automatic Transmission
+    R['gear'] = 1
+    if S['speedX'] > 50:
+        R['gear'] = 2
+    if S['speedX'] > 80:
+        R['gear'] = 3
+    if S['speedX'] > 110:
+        R['gear'] = 4
+    if S['speedX'] > 140:
+        R['gear'] = 5
+    if S['speedX'] > 170:
+        R['gear'] = 6
+
+    if R['accel'] < 0.25:
+        accel = 3
+    elif R['accel'] > 0.25 and R['accel'] < 0.75:
+        accel = 4
+    else:
+        accel = 5
+
+    if R['steer'] < -0.75:
+        steer = 0
+    elif R['steer'] > -0.75 and R['steer'] < 0.25:
+        steer = 1
+    else:
+        steer = 2
+
+    if random.randint(0, 1) == 1:
+        return accel
+    else:
+        return steer
+
+
 if __name__ == '__main__':
-    a = TorcsEnv(17, frame_skip=1)
-    a.reset()
+    env = TorcsEnv(35, frame_skip=1, height=120, width=160)
+    env.reset()
+    total_reward = 0
+    info = {}
     for i in range(100000):
-        ob, reward, done, info = a.step(5)
+        if info:
+            a = drive_example(info)
+        else:
+            a = 5
+        ob, reward, done, info = env.step(a)
+        total_reward += reward
         if done:
-            a.reset()
+            print(total_reward)
+            total_reward = 0
+            break
         # if i % 50 == 0:
         #     print('Resetting! Done.')
         #     a.reset()
-        print('step:{}'.format(i))
-        a.render()
+        print('step:{}, reward:{} '.format(i, reward))
+        env.render()
         # cv2.imwrite('/home/sanjeev/debug/{}.png'.format(i), a.render('rgb_array'))
         # a.close()
+    sys.exit(0)

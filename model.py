@@ -107,3 +107,8 @@ class LSTMPolicy(object):
         else:
             sess = tf.get_default_session()
         return sess.run(self.vf, {self.x: [ob], self.state_in[0]: c, self.state_in[1]: h})[0]
+
+
+class CNNPolicy(object):
+    def __init__(self, ob_space, ac_space, weights_path=None):
+        self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))

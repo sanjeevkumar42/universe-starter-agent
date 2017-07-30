@@ -27,24 +27,19 @@ def get_screen(x, y, w, h, display=None):
     return image
 
 
-def get_screen_shm(shared_memory):
+def get_screen_shm(shared_memory, w, h):
+    fmt = w * h * 3 * 'B'
     memory_value = shared_memory.read()
-    w, h = unpack('ii', memory_value[:8])
-    data = unpack('B' * w * h * 3, memory_value[8:])
+    data = unpack(fmt, memory_value)
     img_data = np.array(data, dtype=np.uint8).reshape((h, w, 3))
     return img_data
-
-def get_screen_size(shared_memory):
-    memory_value = shared_memory.read()
-    w, h = unpack('ii', memory_value[:8])
-    return w, h
 
 
 if __name__ == '__main__':
     # im = get_screen(0, 0, 640, 480, ":45")
     # cv2.imwrite('/data/2.png', im)
-    shared_memory = sysv_ipc.SharedMemory(9301)
-    im = get_screen_shm(shared_memory)
+    shared_memory = sysv_ipc.SharedMemory(3252)
+    im = get_screen_shm(shared_memory, 205, 230)
     plt.imshow(im), plt.show()
     # plt.imshow(im), plt.show()
     cv2.imwrite('/data/1.png', im)

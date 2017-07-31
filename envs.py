@@ -36,11 +36,11 @@ def create_env(env_id, client_id, remotes, **kwargs):
 
 def create_torcs_env(remote, **kwargs):
     env = TorcsEnv(int(remote), frame_skip=1, **kwargs)
-    env = Vectorize(env)
     env = TorcsRescale(env, **kwargs)
+    env = ActionRepeatWrapper(env, 4)
+    env = Vectorize(env)
     env = DiagnosticsInfo(env)
     env = Unvectorize(env)
-    env = ActionRepeatWrapper(env, 4)
     return env
 
 
@@ -67,15 +67,20 @@ class ActionRepeatWrapper(gym.Wrapper):
         return np.repeat(ob, self.action_repeat, -1)
 
 
-class TorcsRescale(vectorized.ObservationWrapper):
+class TorcsRescale(gym.Wrapper):
     def __init__(self, env=None, width=84, height=84, **kwargs):
         super(TorcsRescale, self).__init__(env)
         self.height = height
         self.width = width
         self.observation_space = Box(0.0, 1.0, [height, width, 1])
 
-    def _observation(self, observation_n):
-        return [self._process_frame_torcs(observation) for observation in observation_n]
+    def _step(self, action):
+        state, reward, terminal, info = self.env.step(action)
+        return self._process_frame_torcs(state), reward, terminal, info
+
+    def _reset(self):
+        ob = self.env.reset()
+        return self._process_frame_torcs(ob)
 
     def _process_frame_torcs(self, frame):
         frame = cv2.resize(frame, (self.width, self.height))

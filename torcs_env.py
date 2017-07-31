@@ -58,7 +58,7 @@ class TorcsEnv(gym.Env):
 
     LAUNCH_SEQ = [KEY_MAP.ENTER, KEY_MAP.ENTER, KEY_MAP.UP, KEY_MAP.UP, KEY_MAP.ENTER, KEY_MAP.ENTER]
 
-    def __init__(self, env_id, width=84, height=84, frame_skip=(2, 5), torcs_dir='/usr/local',
+    def __init__(self, env_id, width=160, height=120, frame_skip=(2, 5), torcs_dir='/usr/local',
                  logdir='/data/logs', **kwargs):
         self.env_id = env_id
         self.port = 9500 + self.env_id
@@ -78,6 +78,7 @@ class TorcsEnv(gym.Env):
         self.logdir = os.path.join(logdir, 'torcs-{}'.format(env_id))
         self.logger = Logger(self.env_id, self.logdir)
         self.dist_raced = 0.0
+        self.done = False
 
         if not os.path.exists(self.logdir):
             os.makedirs(self.logdir)
@@ -101,7 +102,7 @@ class TorcsEnv(gym.Env):
         torcs_lib = os.path.join(self.torcs_dir, 'lib/torcs/lib')
         torcs_data = os.path.join(self.torcs_dir, 'share/games/torcs/')
         self.torcs_process = Popen(
-            [torcs_bin, '-port', str(self.port), '-nofuel', '-nodamage', '-nolaptime', '-cmdFreq', '25', '-h',
+            [torcs_bin, '-port', str(self.port), '-nofuel', '-nodamage', '-nolaptime', '-cmdFreq', '10', '-h',
              str(self.screen_h), '-w', str(self.screen_w)],
             env={'LD_LIBRARY_PATH': torcs_lib, 'DISPLAY': self.disp_name},
             cwd=torcs_data, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -118,6 +119,9 @@ class TorcsEnv(gym.Env):
         return torcs_actions
 
     def _step(self, action):
+        if self.done:
+            return self.image, 0.0, self.done, {}
+
         torcs_action = self.__to_torcs_action(action)
 
         self.client.R.d.update(torcs_action)
@@ -142,7 +146,11 @@ class TorcsEnv(gym.Env):
             speed = self.client.S.d['speedX']
             angle = self.client.S.d['angle']
             dist_raced = self.client.S.d['distRaced']
-            reward += dist_raced - self.dist_raced + speed * math.cos(angle) / 100.0
+
+            # reward += dist_raced - self.dist_raced + speed * math.cos(angle) / 100.0
+            # reward += speed*math.cos(angle)
+            reward += speed * math.cos(angle) - np.abs(speed * math.sin(angle)) - speed * abs(
+                self.client.S.d['trackPos'])
             self.dist_raced = dist_raced
 
         long_speed = speed * math.cos(angle)  # speed along x-axis
@@ -150,7 +158,7 @@ class TorcsEnv(gym.Env):
         track = np.array(self.client.S.d['track'])
 
         if track.min() < 0 or np.cos(angle) < 0 or self.time_step > self.min_steps and long_speed < 5:
-            reward = -25
+            reward = -100
             done = True
             print(self.client.S.d)
             self.logger.debug('Terminal state!! track:{}, angle:{}, speed:{}, steps:{}', track, angle, long_speed,
@@ -164,6 +172,7 @@ class TorcsEnv(gym.Env):
             filename = os.path.join(self.logdir, '{}_{}.png'.format(self.torcs_process.pid, self.time_step))
             cv2.imwrite(filename, self.image)
         self.time_step += 1
+        self.done = done
         return self.image, reward, done, info
 
     def _reset(self):
@@ -181,6 +190,7 @@ class TorcsEnv(gym.Env):
         self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
         self.logger.info('Successfully reset torcs after timesteps:{}', self.time_step)
         self.time_step = 0
+        self.done = False
         return self.image
 
     def _render(self, mode='human', close=False):

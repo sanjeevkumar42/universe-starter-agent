@@ -2,7 +2,7 @@ from __future__ import print_function
 from collections import namedtuple
 import numpy as np
 import tensorflow as tf
-from model import LSTMPolicy
+from model import LSTMPolicy, get_policy_network
 import six.moves.queue as queue
 import scipy.signal
 import threading
@@ -172,13 +172,13 @@ should be computed.
         worker_device = "/job:worker/task:{}/cpu:0".format(task)
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
-                self.network = LSTMPolicy(env.observation_space.shape, env.action_space.n)
+                self.network = get_policy_network(env.observation_space.shape, env.action_space.n)
                 self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
                                                    trainable=False)
 
         with tf.device(worker_device):
             with tf.variable_scope("local"):
-                self.local_network = pi = LSTMPolicy(env.observation_space.shape, env.action_space.n)
+                self.local_network = pi = get_policy_network(env.observation_space.shape, env.action_space.n)
                 pi.global_step = self.global_step
 
             self.ac = tf.placeholder(tf.float32, [None, env.action_space.n], name="ac")
@@ -281,10 +281,11 @@ server.
             self.local_network.x: batch.si,
             self.ac: batch.a,
             self.adv: batch.adv,
-            self.r: batch.r,
-            self.local_network.state_in[0]: batch.features[0],
-            self.local_network.state_in[1]: batch.features[1],
+            self.r: batch.r
         }
+        if hasattr(self.local_network, 'state_in'):
+            feed_dict[self.local_network.state_in[0]]= batch.features[0]
+            feed_dict[self.local_network.state_in[1]] = batch.features[1]
 
         fetched = sess.run(fetches, feed_dict=feed_dict)
 

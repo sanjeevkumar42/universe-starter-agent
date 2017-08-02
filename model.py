@@ -53,19 +53,24 @@ def categorical_sample(logits, d):
 
 
 def get_policy_network(ob_space, ac_space, weights_path=None):
-    return CNNPolicy(ob_space, ac_space, weights_path)
-    # return LSTMPolicy(ob_space, ac_space, weights_path)
+    # return CNNPolicy(ob_space, ac_space, weights_path)
+    return LSTMPolicy(ob_space, ac_space, weights_path)
 
 
 class LSTMPolicy(object):
     def __init__(self, ob_space, ac_space, weights_path=None):
         self.x = x = tf.placeholder(tf.float32, [None] + list(ob_space))
-
-        for i in range(4):
-            x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3, 3], [2, 2]))
+        self.x = tf.placeholder(tf.float32, [None] + list(ob_space))
+        x = tf.nn.relu(conv2d(self.x, 32, 'conv1', [8, 8], [4, 4], 'SAME'))
+        x = tf.nn.relu(conv2d(x, 64, 'conv2', [4, 4], [2, 2], 'SAME'))
+        x = tf.nn.relu(conv2d(x, 64, 'conv3', [3, 3], [1, 1], 'SAME'))
+        x = flatten(x)
+        x = tf.nn.relu(linear(x, 512, 'fc1'))
+        # for i in range(4):
+        #     x = tf.nn.elu(conv2d(x, 32, "l{}".format(i + 1), [3, 3], [2, 2]))
         # introduce a "fake" batch dimension of 1 after flatten so that we can do LSTM over time dim
-        x = tf.expand_dims(flatten(x), [0])
-
+        # x = flatten(x)
+        x = tf.expand_dims(x, [0])
         size = 256
         if use_tf100_api:
             lstm = rnn.BasicLSTMCell(size, state_is_tuple=True)

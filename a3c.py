@@ -7,10 +7,13 @@ import six.moves.queue as queue
 import scipy.signal
 import threading
 import distutils.version
+
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
+
 
 def discount(x, gamma):
     return scipy.signal.lfilter([1], [1, -gamma], x[::-1], axis=0)[::-1]
+
 
 def process_rollout(rollout, gamma, lambda_=1.0):
     """
@@ -31,13 +34,16 @@ given a rollout, compute its returns and the advantage
     features = rollout.features[0]
     return Batch(batch_si, batch_a, batch_adv, batch_r, rollout.terminal, features)
 
+
 Batch = namedtuple("Batch", ["si", "a", "adv", "r", "terminal", "features"])
+
 
 class PartialRollout(object):
     """
 a piece of a complete rollout.  We run our agent, and process its experience
 once it has processed enough steps.
 """
+
     def __init__(self):
         self.states = []
         self.actions = []
@@ -65,12 +71,14 @@ once it has processed enough steps.
         self.terminal = other.terminal
         self.features.extend(other.features)
 
+
 class RunnerThread(threading.Thread):
     """
 One of the key distinctions between a normal environment and a universe environment
 is that a universe environment is _real time_.  This means that there should be a thread
 that would constantly interact with the environment and tell it what to do.  This thread is here.
 """
+
     def __init__(self, env, policy, num_local_steps, visualise):
         threading.Thread.__init__(self)
         self.queue = queue.Queue(5)
@@ -102,7 +110,6 @@ that would constantly interact with the environment and tell it what to do.  Thi
             self.queue.put(next(rollout_provider), timeout=600.0)
 
 
-
 def env_runner(env, policy, num_local_steps, summary_writer, render):
     """
 The logic of the thread runner.  In brief, it constantly keeps on running
@@ -113,6 +120,7 @@ runner appends the policy to the queue.
     last_features = policy.get_initial_features()
     length = 0
     rewards = 0
+    epsilon = 0.2
 
     while True:
         terminal_end = False
@@ -122,7 +130,13 @@ runner appends the policy to the queue.
             fetched = policy.act(last_state, *last_features)
             action, value_, features = fetched[0], fetched[1], fetched[2:]
             # argmax to convert from one-hot
-            state, reward, terminal, info = env.step(action.argmax())
+            if policy.global_step.eval() < 1e6 and np.random.rand(1) < epsilon:
+                a = env.action_space.sample()
+                action = [0] * env.action_space.n
+                action[a] = 1
+            else:
+                a = action.argmax()
+            state, reward, terminal, info = env.step(a)
             if render:
                 env.render()
 
@@ -158,6 +172,7 @@ runner appends the policy to the queue.
         # once we have enough experience, yield it, and have the ThreadRunner place it on a queue
         yield rollout
 
+
 class A3C(object):
     def __init__(self, env, task, visualise):
         """
@@ -173,7 +188,8 @@ should be computed.
         with tf.device(tf.train.replica_device_setter(1, worker_device=worker_device)):
             with tf.variable_scope("global"):
                 self.network = get_policy_network(env.observation_space.shape, env.action_space.n)
-                self.global_step = tf.get_variable("global_step", [], tf.int32, initializer=tf.constant_initializer(0, dtype=tf.int32),
+                self.global_step = tf.get_variable("global_step", [], tf.int32,
+                                                   initializer=tf.constant_initializer(0, dtype=tf.int32),
                                                    trainable=False)
 
         with tf.device(worker_device):
@@ -198,7 +214,7 @@ should be computed.
             entropy = - tf.reduce_sum(prob_tf * log_prob_tf)
 
             bs = tf.to_float(tf.shape(pi.x)[0])
-            self.loss = pi_loss + 0.5 * vf_loss - entropy * 0.01
+            self.loss = pi_loss + 0.5 * vf_loss - entropy * 0.02
 
             # 20 represents the number of "local steps":  the number of timesteps
             # we run the policy before we update the parameters.
@@ -207,7 +223,6 @@ should be computed.
             # slows down learning.  In this code, we found that making local steps be much
             # smaller than 20 makes the algorithm more difficult to tune and to get to work.
             self.runner = RunnerThread(env, pi, 20, visualise)
-
 
             grads = tf.gradients(self.loss, pi.var_list)
 
@@ -284,7 +299,7 @@ server.
             self.r: batch.r
         }
         if hasattr(self.local_network, 'state_in'):
-            feed_dict[self.local_network.state_in[0]]= batch.features[0]
+            feed_dict[self.local_network.state_in[0]] = batch.features[0]
             feed_dict[self.local_network.state_in[1]] = batch.features[1]
 
         fetched = sess.run(fetches, feed_dict=feed_dict)

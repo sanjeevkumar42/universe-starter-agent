@@ -84,7 +84,8 @@ class TorcsRescale(gym.Wrapper):
 
     def _process_frame_torcs(self, frame):
         frame = cv2.resize(frame, (self.width, self.height))
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = 0.299 * frame[..., 0] + 0.587 * frame[..., 1] + 0.114 * frame[..., 2]
+        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         frame = frame * (1.0 / 255.0)
         frame = np.reshape(frame, self.observation_space.shape)
         return frame

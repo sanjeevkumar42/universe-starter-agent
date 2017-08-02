@@ -2,11 +2,14 @@ from __future__ import print_function
 from collections import namedtuple
 import numpy as np
 import tensorflow as tf
+
+import torcs_env
 from model import LSTMPolicy, get_policy_network
 import six.moves.queue as queue
 import scipy.signal
 import threading
 import distutils.version
+import math
 
 use_tf12_api = distutils.version.LooseVersion(tf.VERSION) >= distutils.version.LooseVersion('0.12.0')
 
@@ -121,6 +124,7 @@ runner appends the policy to the queue.
     length = 0
     rewards = 0
     epsilon = 0.2
+    info = None
 
     while True:
         terminal_end = False
@@ -130,8 +134,9 @@ runner appends the policy to the queue.
             fetched = policy.act(last_state, *last_features)
             action, value_, features = fetched[0], fetched[1], fetched[2:]
             # argmax to convert from one-hot
-            if policy.global_step.eval() < 1e6 and np.random.rand(1) < epsilon:
-                a = env.action_space.sample()
+            g_step = policy.global_step.eval()
+            if g_step < 1e6 and np.random.rand(1) < 1/(2*math.log(g_step+10, 10)) and info and info.get('state') is not None:
+                a = torcs_env.drive_example(info.get('state'))
                 action = [0] * env.action_space.n
                 action[a] = 1
             else:
@@ -151,7 +156,10 @@ runner appends the policy to the queue.
             if info:
                 summary = tf.Summary()
                 for k, v in info.items():
-                    summary.value.add(tag=k, simple_value=float(v))
+                    if k == 'state':
+                        summary.value.add(tag=k, simple_value=float(v['speedX']))
+                    else:
+                        summary.value.add(tag=k, simple_value=float(v))
                 summary_writer.add_summary(summary, policy.global_step.eval())
                 summary_writer.flush()
 
@@ -222,7 +230,7 @@ should be computed.
             # on the one hand;  but on the other hand, we get less frequent parameter updates, which
             # slows down learning.  In this code, we found that making local steps be much
             # smaller than 20 makes the algorithm more difficult to tune and to get to work.
-            self.runner = RunnerThread(env, pi, 20, visualise)
+            self.runner = RunnerThread(env, pi, 10, visualise)
 
             grads = tf.gradients(self.loss, pi.var_list)
 
@@ -267,11 +275,11 @@ should be computed.
 self explanatory:  take a rollout from the queue of the thread runner.
 """
         rollout = self.runner.queue.get(timeout=600.0)
-        while not rollout.terminal:
-            try:
-                rollout.extend(self.runner.queue.get_nowait())
-            except queue.Empty:
-                break
+        # while not rollout.terminal:
+        #     try:
+        #         rollout.extend(self.runner.queue.get_nowait())
+        #     except queue.Empty:
+        #         break
         return rollout
 
     def process(self, sess):

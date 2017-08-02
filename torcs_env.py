@@ -167,7 +167,7 @@ class TorcsEnv(gym.Env):
             done = False
 
         self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
-        info = dict(self.client.S.d)
+        info = {'state': self.client.S.d}
         if self.time_step % 50 == 0 or done:
             filename = os.path.join(self.logdir, '{}_{}.png'.format(self.torcs_process.pid, self.time_step))
             cv2.imwrite(filename, self.image)

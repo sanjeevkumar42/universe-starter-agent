@@ -37,7 +37,7 @@ def create_env(env_id, client_id, remotes, **kwargs):
 def create_torcs_env(remote, **kwargs):
     env = TorcsEnv(int(remote), frame_skip=1, **kwargs)
     env = TorcsRescale(env, **kwargs)
-    env = ActionRepeatWrapper(env, 4)
+    env = ActionRepeatWrapper(env, 2)
     env = Vectorize(env)
     env = DiagnosticsInfo(env)
     env = Unvectorize(env)
@@ -173,6 +173,8 @@ class DiagnosticsInfoI(vectorized.Filter):
 
     def _after_step(self, observation, reward, done, info):
         to_log = {}
+        if info.get('state') is not None:
+            to_log['state'] = info.get('state')
         if self._episode_length == 0:
             self._episode_time = time.time()
 

@@ -120,7 +120,7 @@ class TorcsEnv(gym.Env):
 
     def _step(self, action):
         if self.done:
-            return self.image, 0.0, self.done, {}
+            return self.image, 0.0, self.done, self.info
 
         torcs_action = self.__to_torcs_action(action)
 
@@ -167,13 +167,13 @@ class TorcsEnv(gym.Env):
             done = False
 
         self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
-        info = {'state': self.client.S.d}
+        self.info = {'state': dict(self.client.S.d)}
         if self.time_step % 50 == 0 or done:
             filename = os.path.join(self.logdir, '{}_{}.png'.format(self.torcs_process.pid, self.time_step))
             cv2.imwrite(filename, self.image)
         self.time_step += 1
         self.done = done
-        return self.image, reward, done, info
+        return self.image, reward, done, self.info
 
     def _reset(self):
         self.logger.info('Resetting torcs!!')
@@ -188,6 +188,7 @@ class TorcsEnv(gym.Env):
                 continue
         self.dist_raced = 0.0
         self.image = xserver_util.get_screen_shm(self.shared_memory, self.screen_w, self.screen_h)
+        self.info = {'state': dict(self.client.S.d)}
         self.logger.info('Successfully reset torcs after timesteps:{}', self.time_step)
         self.time_step = 0
         self.done = False
@@ -208,6 +209,36 @@ class TorcsEnv(gym.Env):
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+
+
+class SensorBasedTorcsEnv(TorcsEnv):
+    def __init__(self, *args, **kwargs):
+        super(SensorBasedTorcsEnv, self).__init__(*args, **kwargs)
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(29,))
+
+    def _step(self, action):
+        ob, reward, done, info = super(SensorBasedTorcsEnv, self)._step(action)
+        state = self._sensor_ob_to_state(info)
+        return state, reward, done, info
+
+    def _sensor_ob_to_state(self, info):
+        sensor_obs = info['state']
+        angle = np.array(sensor_obs['angle'], dtype=np.float32) / math.pi
+        # focus = np.array(sensor_obs['focus'], dtype=np.float32) / 200.0
+        speedx = np.array(sensor_obs['speedX'], dtype=np.float32) / 300.0
+        speedy = np.array(sensor_obs['speedY'], dtype=np.float32) / 300.0
+        speedz = np.array(sensor_obs['speedZ'], dtype=np.float32) / 300.0
+        track = np.array(sensor_obs['track'], dtype=np.float32) / 200.0
+        wheel_spin = np.array(sensor_obs['wheelSpinVel'], dtype=np.float32) / 100.0
+        rpm = np.array(sensor_obs['rpm'], dtype=np.float32) / 10000
+        track_pos = np.array(sensor_obs['trackPos'], dtype=np.float32)
+        state = np.hstack((angle, track, track_pos, speedx, speedy, speedz, wheel_spin, rpm))
+        return state
+
+    def _reset(self):
+        super(SensorBasedTorcsEnv, self)._reset()
+        state = self._sensor_ob_to_state(self.info)
+        return state
 
 
 R = {'accel': 0.0, 'gear': 1, 'steer': 0}
@@ -272,13 +303,14 @@ def drive_example(S):
 
 
 if __name__ == '__main__':
-    env = TorcsEnv(35, frame_skip=1, height=120, width=160)
+    # env = TorcsEnv(35, frame_skip=1, height=120, width=160)
+    env = SensorBasedTorcsEnv(35, frame_skip=1, height=120, width=160)
     env.reset()
     total_reward = 0
     info = {}
     for i in range(100000):
         if info:
-            a = drive_example(info)
+            a = drive_example(info['state'])
         else:
             a = 5
         ob, reward, done, info = env.step(a)

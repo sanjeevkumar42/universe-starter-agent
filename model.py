@@ -54,8 +54,8 @@ def categorical_sample(logits, d):
 
 def get_policy_network(ob_space, ac_space, weights_path=None):
     # return CNNPolicy(ob_space, ac_space, weights_path)
-    return LSTMPolicy(ob_space, ac_space, weights_path)
-
+    # return LSTMPolicy(ob_space, ac_space, weights_path)
+    return FCModel(ob_space, ac_space, weights_path)
 
 class LSTMPolicy(object):
     def __init__(self, ob_space, ac_space, weights_path=None):
@@ -167,5 +167,41 @@ class CNNPolicy(object):
         return sess.run(self.vf, {self.x: [ob]})[0]
 
 
+class FCModel(object):
+    def __init__(self, ob_space, ac_space, weights_path=None):
+        self.x = tf.placeholder(tf.float32, [None] + list(ob_space))
+        x = tf.nn.relu(linear(self.x, 300, 'h0'))
+        x = tf.nn.relu(linear(x, 600, 'h1'))
+
+        self.logits = linear(x, ac_space, "action", normalized_columns_initializer(0.01))
+        self.vf = tf.reshape(linear(x, 1, "value", normalized_columns_initializer(1.0)), [-1])
+        self.sample = categorical_sample(self.logits, ac_space)[0, :]
+        self.var_list = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, tf.get_variable_scope().name)
+        if weights_path:
+            self.sess = tf.Session()
+            all_variables = [v for v in tf.global_variables() if not v.name.startswith("local")]
+            saver = tf.train.Saver(all_variables)
+            saver.restore(self.sess, weights_path)
+        else:
+            self.sess = None
+
+    def get_initial_features(self):
+        return 0, 0
+
+    def act(self, ob, c, h):
+        if self.sess:
+            sess = self.sess
+        else:
+            sess = tf.get_default_session()
+        return sess.run([self.sample, self.vf, self.vf, self.vf],
+                        {self.x: [ob]})
+
+    def value(self, ob, c, h):
+        if self.sess:
+            sess = self.sess
+        else:
+            sess = tf.get_default_session()
+        return sess.run(self.vf, {self.x: [ob]})[0]
+
 if __name__ == '__main__':
-    policy = CNNPolicy((84, 84, 4), 9)
+    policy = FCModel((84, 84, 4), 9)

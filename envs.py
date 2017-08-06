@@ -11,7 +11,7 @@ from universe import spaces as vnc_spaces
 from universe.spaces.vnc_event import keycode
 import time
 
-from torcs_env import TorcsEnv
+from torcs_env import TorcsEnv, SensorBasedTorcsEnv
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -21,6 +21,8 @@ universe.configure_logging()
 def create_env(env_id, client_id, remotes, **kwargs):
     if env_id == 'Torcs-v0':
         return create_torcs_env(int(client_id) + 1, **kwargs)
+    elif env_id=='Torcs-v1':
+        return sensor_based_torcs_env(int(client_id) + 1, **kwargs)
 
     spec = gym.spec(env_id)
 
@@ -33,11 +35,18 @@ def create_env(env_id, client_id, remotes, **kwargs):
         assert "." not in env_id  # universe environments have dots in names.
         return create_atari_env(env_id)
 
+def sensor_based_torcs_env(remote, **kwargs):
+    env = SensorBasedTorcsEnv(int(remote), frame_skip=1, **kwargs)
+    env = Vectorize(env)
+    env = DiagnosticsInfo(env)
+    env = Unvectorize(env)
+    return env
+
 
 def create_torcs_env(remote, **kwargs):
     env = TorcsEnv(int(remote), frame_skip=1, **kwargs)
     env = TorcsRescale(env, **kwargs)
-    env = ActionRepeatWrapper(env, 2)
+    env = ActionRepeatWrapper(env, 4)
     env = Vectorize(env)
     env = DiagnosticsInfo(env)
     env = Unvectorize(env)

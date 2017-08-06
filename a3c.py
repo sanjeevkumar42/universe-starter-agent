@@ -135,7 +135,7 @@ runner appends the policy to the queue.
             action, value_, features = fetched[0], fetched[1], fetched[2:]
             # argmax to convert from one-hot
             g_step = policy.global_step.eval()
-            if g_step < 1e6 and np.random.rand(1) < 1/(2*math.log(g_step+10, 10)) and info and info.get('state') is not None:
+            if g_step < 5e5 and np.random.rand(1) < epsilon and info and info.get('state') is not None:
                 a = torcs_env.drive_example(info.get('state'))
                 action = [0] * env.action_space.n
                 action[a] = 1
@@ -230,7 +230,7 @@ should be computed.
             # on the one hand;  but on the other hand, we get less frequent parameter updates, which
             # slows down learning.  In this code, we found that making local steps be much
             # smaller than 20 makes the algorithm more difficult to tune and to get to work.
-            self.runner = RunnerThread(env, pi, 10, visualise)
+            self.runner = RunnerThread(env, pi, 20, visualise)
 
             grads = tf.gradients(self.loss, pi.var_list)
 
@@ -238,7 +238,7 @@ should be computed.
                 tf.summary.scalar("model/policy_loss", pi_loss / bs)
                 tf.summary.scalar("model/value_loss", vf_loss / bs)
                 tf.summary.scalar("model/entropy", entropy / bs)
-                tf.summary.image("model/state", pi.x)
+                # tf.summary.image("model/state", pi.x)
                 tf.summary.scalar("model/grad_global_norm", tf.global_norm(grads))
                 tf.summary.scalar("model/var_global_norm", tf.global_norm(pi.var_list))
                 self.summary_op = tf.summary.merge_all()
@@ -247,7 +247,7 @@ should be computed.
                 tf.scalar_summary("model/policy_loss", pi_loss / bs)
                 tf.scalar_summary("model/value_loss", vf_loss / bs)
                 tf.scalar_summary("model/entropy", entropy / bs)
-                tf.image_summary("model/state", pi.x)
+                # tf.image_summary("model/state", pi.x)
                 tf.scalar_summary("model/grad_global_norm", tf.global_norm(grads))
                 tf.scalar_summary("model/var_global_norm", tf.global_norm(pi.var_list))
                 self.summary_op = tf.merge_all_summaries()
@@ -310,7 +310,11 @@ server.
             feed_dict[self.local_network.state_in[0]] = batch.features[0]
             feed_dict[self.local_network.state_in[1]] = batch.features[1]
 
+        # weight_mat = sess.run(self.network.var_list[0])
+        # print('Before var_name:{}, weight:{}'.format(self.network.var_list[0].name, np.sum(weight_mat)))
         fetched = sess.run(fetches, feed_dict=feed_dict)
+        # weight_mat = sess.run(self.network.var_list[0])
+        # print('After var_name:{}, weight:{}'.format(self.network.var_list[0].name, np.sum(weight_mat)))
 
         if should_compute_summary:
             self.summary_writer.add_summary(tf.Summary.FromString(fetched[0]), fetched[-1])
